@@ -4,9 +4,12 @@
 atxmond.
 
 Usage:
-  atxmond
+  atxmond [options]
 
 Options:
+  -c <fn>        Path to the configuration file.
+  --alerts <fn>  Path to the alerts file.
+  --events <fn>  Path to the events file.
 '''
 
 __version__ = '0.0'
@@ -126,8 +129,6 @@ def show():
 
 @app.route('/alerts')
 def alerts():
-	alerts = load_alerts('alerts.conf')
-
 	x = []
 	for reg_exp, operator, value in alerts:
 		for k in sorted(last_vals.keys()):
@@ -176,8 +177,10 @@ def show_last(test):
 #enddef
 
 class MyThread(threading.Thread):
-	def __init__(self):
+	def __init__(self, events_fn):
 		threading.Thread.__init__(self, daemon=False)
+
+		self.events_fn = events_fn
 
 		self._run = True
 	#enddef
@@ -185,7 +188,7 @@ class MyThread(threading.Thread):
 	def run(self):
 		logging.info('thread run')
 
-		events = load_events('events.conf')
+		events = load_events(self.events_fn)
 
 		while self._run:
 			while data:
@@ -272,24 +275,63 @@ class MyThread(threading.Thread):
 #endclass
 
 # TODO: globals are shit!!!
-alerts = load_alerts('alerts.conf')
+alerts = None
 
 def main():
 	args = docopt.docopt(__doc__, version=__version__)
 
 	logging.basicConfig(level='DEBUG')
 
+	cfg_fn = args['-c']
+	if not cfg_fn:
+		for fn in ('atxmond.conf', '/etc/atxmond/atxmond.conf'):
+			if not os.path.isfile(fn): continue
+			cfg_fn = fn
+			break
+		#endfor
+	#endif
+
+	alerts_fn = args['--alerts']
+	if not alerts_fn:
+		for fn in ('alerts.conf', '/etc/atxmond/alerts.conf'):
+			if not os.path.isfile(fn): continue
+			alerts_fn = fn
+			break
+		#endfor
+	#endif
+
+	events_fn = args['--events']
+	if not events_fn:
+		for fn in ('events.conf', '/etc/atxmond/events.conf'):
+			if not os.path.isfile(fn): continue
+			events_fn = fn
+			break
+		#endfor
+	#endif
+
+	state_fn = args['--state']
+	if not state_fn:
+		for fn in ('state.json', '/var/lib/atxmond/state.json'):
+			if not os.path.isfile(fn): continue
+			state_fn = fn
+			break
+		#endfor
+	#endif
+
+	global alerts
+	alerts = load_alerts(alerts_fn)
+
 	global data, evts, last_vals
 
-	if os.path.isfile('state.json'):
-		logging.info('loading state from state.json')
-		s = load_json('state.json')
+	if state_fn and os.path.isfile(state_fn):
+		logging.info('loading state from %s' % state_fn)
+		s = load_json(state_fn)
 		data = s.get('data', data)
 		evts = s.get('evts', evts)
 		last_vals = s.get('last_vals', last_vals)
 	#endif
 
-	thr = MyThread()
+	thr = MyThread(events_fn)
 	thr.start()
 
 	app.run(host='::', threaded=True)
@@ -297,12 +339,12 @@ def main():
 	thr.quit()
 	thr.join()
 
-	logging.info('saving state to state.json')
+	logging.info('saving state to %s' % state_fn)
 	s = {}
 	s['data'] = data
 	s['evts'] = evts
 	s['last_vals'] = last_vals
-	save_json(s, 'state.json')
+	save_json(s, state_fn)
 
 	logging.info('exit')
 #enddef
