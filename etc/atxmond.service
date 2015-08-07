@@ -1,0 +1,11 @@
+[Unit]
+Description=AtxMon Server
+After=network.target
+Wants=network.target
+
+[Service]
+ExecStart=/usr/bin/atxmond
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
