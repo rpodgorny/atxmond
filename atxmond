@@ -10,6 +10,7 @@ Options:
   -c <fn>        Path to the configuration file.
   --alerts <fn>  Path to the alerts file.
   --events <fn>  Path to the events file.
+  --state <fn>   Path to the state file.
 '''
 
 __version__ = '0.0'
