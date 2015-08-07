@@ -27,6 +27,7 @@ import docopt
 
 
 HISTORY_LEN = 10
+RRD = False
 GEN_PNG = False
 
 # TODO: globals are shit
@@ -103,10 +104,8 @@ def index():
 @app.route('/save', methods=['GET', 'POST'])
 def save_many():
 	d = flask.request.get_json(force=True)
-	print('will save %s entries' % len(d))
-
+	logging.debug('will save %s entries' % len(d))
 	data.extend(d)
-
 	return 'ok'
 #enddef
 
@@ -194,12 +193,12 @@ class MyThread(threading.Thread):
 				v = i['value']
 				t = i['time']
 				interval = i['interval']
-				print('data', k, v, t, interval)
+				logging.debug('data %s %s %s %s' % (k, v, t, interval))
 
 				db.data.insert_one({'k': k, 'v': v, 't': datetime.datetime.fromtimestamp(t)})
 
 				if v != last_vals.get(k):
-					print('change', k, v, t, interval)
+					logging.debug('change %s %s %s %s' % (k, v, t, interval))
 					db.changes.insert_one({'k': k, 'v': v, 't': datetime.datetime.fromtimestamp(t)})
 
 					for reg_exp, operator, value in events:
@@ -213,48 +212,50 @@ class MyThread(threading.Thread):
 							raise Exception('unknown operator %s' % operator)
 						#endif
 
-						print('new event: %s %s' % (k, v))
+						logging.debug('new event: %s %s' % (k, v))
 						evts.append((k, v, t))
 					#endfor
 				#endif
 
 				fn = normalize(k)
 
-				if not os.path.isfile('rrd/%s.rrd' % fn):
-					cmd = 'rrdtool create rrd/%s.rrd --start 0 --step %d DS:xxx:GAUGE:%d:U:U' % (fn, interval, interval * 2)
-					cmd += ' RRA:AVERAGE:0.999:1:100 RRA:AVERAGE:0.999:100:100'
-					print(cmd)
-					subprocess.check_call(cmd, shell=True)
-				#endif
+				if RRD:
+					if not os.path.isfile('rrd/%s.rrd' % fn):
+						cmd = 'rrdtool create rrd/%s.rrd --start 0 --step %d DS:xxx:GAUGE:%d:U:U' % (fn, interval, interval * 2)
+						cmd += ' RRA:AVERAGE:0.999:1:100 RRA:AVERAGE:0.999:100:100'
+						logging.debug(cmd)
+						subprocess.check_call(cmd, shell=True)
+					#endif
 
-				#cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(t - 1), v)
-				#print(cmd)
-				#subprocess.check_call(cmd, shell=True)
+					#cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(t - 1), v)
+					#logging.debug(cmd)
+					#subprocess.check_call(cmd, shell=True)
 
-				cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(t), v)
-				print(cmd)
-				subprocess.check_call(cmd, shell=True)
-
-				if GEN_PNG:
-					cmd = 'rrdtool graph png/%s__10min.png --end now --start end-10m --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-					print(cmd)
+					cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(t), v)
+					logging.debug(cmd)
 					subprocess.check_call(cmd, shell=True)
 
-					cmd = 'rrdtool graph png/%s__1h.png --end now --start end-1h --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-					print(cmd)
-					subprocess.check_call(cmd, shell=True)
+					if GEN_PNG:
+						cmd = 'rrdtool graph png/%s__10min.png --end now --start end-10m --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+						logging.debug(cmd)
+						subprocess.check_call(cmd, shell=True)
 
-					cmd = 'rrdtool graph png/%s__1d.png --end now --start end-1d --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-					print(cmd)
-					subprocess.check_call(cmd, shell=True)
+						cmd = 'rrdtool graph png/%s__1h.png --end now --start end-1h --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+						logging.debug(cmd)
+						subprocess.check_call(cmd, shell=True)
 
-					cmd = 'rrdtool graph png/%s__1w.png --end now --start end-1w --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-					print(cmd)
-					subprocess.check_call(cmd, shell=True)
+						cmd = 'rrdtool graph png/%s__1d.png --end now --start end-1d --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+						logging.debug(cmd)
+						subprocess.check_call(cmd, shell=True)
 
-					cmd = 'rrdtool graph png/%s__1m.png --end now --start end-1M --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-					print(cmd)
-					subprocess.check_call(cmd, shell=True)
+						cmd = 'rrdtool graph png/%s__1w.png --end now --start end-1w --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+						logging.debug(cmd)
+						subprocess.check_call(cmd, shell=True)
+
+						cmd = 'rrdtool graph png/%s__1m.png --end now --start end-1M --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+						logging.debug(cmd)
+						subprocess.check_call(cmd, shell=True)
+					#endif
 				#endif
 
 				last_vals[k] = v
