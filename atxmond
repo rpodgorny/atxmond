@@ -28,6 +28,7 @@ import re
 import json
 import pymongo
 import docopt
+from configparser import ConfigParser
 
 
 HISTORY_LEN = 10
@@ -36,19 +37,10 @@ GEN_PNG = False
 
 # TODO: globals are shit
 app = flask.Flask(__name__)
-db = pymongo.MongoClient().atxmon
+db = None
 data = []
 evts = []  # TODO: this is shitty name
 last_vals = {}  # TODO: shitty name
-
-# TODO: move this
-db.data.ensure_index('k')
-db.data.ensure_index('t')
-#db.data.ensure_index(['k', 'v'])
-#db.data.ensure_index(['k', 't'])
-#db.data.ensure_index(['k', 'v', 't'])
-db.changes.ensure_index('k')
-db.changes.ensure_index('t')
 
 
 # TODO: ugly name, ugly functionality
@@ -286,7 +278,7 @@ def main():
 
 	cfg_fn = args['-c']
 	if not cfg_fn:
-		for fn in ('atxmond.conf', '/etc/atxmond/atxmond.conf'):
+		for fn in ('etc/atxmond.conf', '/etc/atxmond/atxmond.conf'):
 			if not os.path.isfile(fn): continue
 			cfg_fn = fn
 			break
@@ -295,7 +287,7 @@ def main():
 
 	alerts_fn = args['--alerts']
 	if not alerts_fn:
-		for fn in ('alerts.conf', '/etc/atxmond/alerts.conf'):
+		for fn in ('etc/alerts.conf', '/etc/atxmond/alerts.conf'):
 			if not os.path.isfile(fn): continue
 			alerts_fn = fn
 			break
@@ -304,7 +296,7 @@ def main():
 
 	events_fn = args['--events']
 	if not events_fn:
-		for fn in ('events.conf', '/etc/atxmond/events.conf'):
+		for fn in ('etc/events.conf', '/etc/atxmond/events.conf'):
 			if not os.path.isfile(fn): continue
 			events_fn = fn
 			break
@@ -332,6 +324,23 @@ def main():
 		evts = s.get('evts', evts)
 		last_vals = s.get('last_vals', last_vals)
 	#endif
+
+	cfg = ConfigParser()
+	cfg.read(cfg_fn)
+
+	collection_name = cfg.get('Mongo', 'Collection')
+	logging.info('will use collection %s' % collection_name)
+
+	global db
+	db = pymongo.MongoClient()[collection_name]
+
+	db.data.ensure_index('k')
+	db.data.ensure_index('t')
+	#db.data.ensure_index(['k', 'v'])
+	#db.data.ensure_index(['k', 't'])
+	#db.data.ensure_index(['k', 'v', 't'])
+	db.changes.ensure_index('k')
+	db.changes.ensure_index('t')
 
 	thr = MyThread(events_fn)
 	thr.start()
