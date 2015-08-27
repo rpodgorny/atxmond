@@ -1,0 +1,11 @@
+[Unit]
+Description=AtxMon Server for %i
+After=network.target
+Wants=network.target
+
+[Service]
+ExecStart=/usr/bin/atxmond -c /etc/atxmond/%i/atxmond.conf -a /etc/atxmond/%i/alerts.conf -e /etc/atxmond/%i/events.conf -s /var/lib/atxmond/state.%i.json
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
