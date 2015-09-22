@@ -4,7 +4,7 @@ After=network.target
 Wants=network.target
 
 [Service]
-ExecStart=/usr/bin/atxmond -c /etc/atxmond/%i/atxmond.conf -a /etc/atxmond/%i/alerts.conf -e /etc/atxmond/%i/events.conf -s /var/lib/atxmond/state.%i.json
+ExecStart=/usr/bin/atxmond -c /etc/atxmond/%i/atxmond.conf --alerts /etc/atxmond/%i/alerts.conf --events /etc/atxmond/%i/events.conf --state /var/lib/atxmond/state.%i.json
 Restart=on-failure
 
 [Install]
