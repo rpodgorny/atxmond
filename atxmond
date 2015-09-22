@@ -328,6 +328,9 @@ def main():
 	cfg = ConfigParser()
 	cfg.read(cfg_fn)
 
+	port = cfg.getint('General', 'Port', fallback=None)
+	logging.info('will run on port %d' % port)
+
 	collection_name = cfg.get('Mongo', 'Collection')
 	logging.info('will use collection %s' % collection_name)
 
@@ -345,7 +348,7 @@ def main():
 	thr = MyThread(events_fn)
 	thr.start()
 
-	app.run(host='::', threaded=True)
+	app.run('::', port, threaded=True)
 
 	thr.quit()
 	thr.join()
