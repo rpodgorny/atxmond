@@ -8,11 +8,11 @@
 		<td>{{ v }}</td>
 		<td>{{ t }}</td>
 		<td><a href="show_last/{{ k|urlencode() }}">last</a></td>
-		<td><a href="static/png/{{ k|replace('/', '__')|urlencode() }}__10min.png">10min</a></td>
-		<td><a href="static/png/{{ k|replace('/', '__')|urlencode() }}__1h.png">1h</a></td>
-		<td><a href="static/png/{{ k|replace('/', '__')|urlencode() }}__1d.png">1d</a></td>
-		<td><a href="static/png/{{ k|replace('/', '__')|urlencode() }}__1w.png">1w</a></td>
-		<td><a href="static/png/{{ k|replace('/', '__')|urlencode() }}__1m.png">1m</a></td>
+		<td><a href="graph/{{ k|urlencode() }}/600">10min</a></td>
+		<td><a href="graph/{{ k|urlencode() }}/3600">1h</a></td>
+		<td><a href="graph/{{ k|urlencode() }}/86400">1d</a></td>
+		<td><a href="graph/{{ k|urlencode() }}/2592000">30d</a></td>
+		<td><a href="graph/{{ k|urlencode() }}/31536000">365d</a></td>
 	</tr>
 {% endfor %}
 </table>
