@@ -2,7 +2,7 @@
 
 from setuptools import setup, find_packages
 
-from atxmon.version import __version__
+from atxmond.version import __version__
 
 setup(
 	name = 'atxmond',
@@ -13,6 +13,8 @@ setup(
 			#'include_files': ['etc/atxmonc.conf', ]
 		},
 	},
-	scripts = ['atxmond', ],
+	#scripts = ['atxmond', ],
+	entry_points = {'console_scripts': 'atxmond = atxmond:main'},
 	packages = find_packages(),
+	include_package_data = True,
 )

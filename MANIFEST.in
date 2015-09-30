@@ -1,0 +1,2 @@
+recursive-include atxmond/templates *
+recursive-include atxmond/static *
