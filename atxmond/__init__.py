@@ -14,8 +14,6 @@ Options:
   --port <port>  Port number to listen on.
 '''
 
-__version__ = '0.0'
-
 import sys
 import flask
 import json
@@ -32,9 +30,13 @@ import docopt
 from configparser import ConfigParser
 
 
+__version__ = '0.0'
+
+
 HISTORY_LEN = 10
 RRD = False
 GEN_PNG = False
+
 
 # TODO: globals are shit
 app = flask.Flask(__name__)
@@ -47,56 +49,52 @@ last_vals = {}  # TODO: shitty name
 # TODO: ugly name, ugly functionality
 def normalize(s):
 	return s.replace('/', '__').replace(' ', '_').replace(':', '_')
-#enddef
+
 
 def load_json(fn):
 	with open(fn, 'r') as f:
 		return json.load(f)
-	#endwith
-#enddef
+
 
 def save_json(data, fn):
 	with open(fn, 'w') as f:
 		return json.dump(data, f, indent=2)
-	#endwith
-#enddef
+
 
 def load_alerts(fn):
 	ret = []
 	with open(fn, 'r') as f:
 		for line in f:
 			line = line.strip()
-			if not line: continue
+			if not line:
+				continue
 
 			reg_exp, operator, value = line.split(' ')
 			value = int(value)
 
 			ret.append((reg_exp, operator, value))
-		#endfor
-	#endwith
 	return ret
-#enddef
+
 
 def load_events(fn):
 	ret = []
 	with open(fn, 'r') as f:
 		for line in f:
 			line = line.strip()
-			if not line: continue
+			if not line:
+				continue
 
 			reg_exp, operator, value = line.split(' ')
 			value = int(value)
 
 			ret.append((reg_exp, operator, value))
-		#endfor
-	#endwith
 	return ret
-#enddef
+
 
 @app.route('/')
 def index():
 	return 'index'
-#enddef
+
 
 @app.route('/save', methods=['GET', 'POST'])
 def save_many():
@@ -104,7 +102,7 @@ def save_many():
 	logging.debug('will save %s entries' % len(d))
 	data.extend(d)
 	return 'ok'
-#enddef
+
 
 @app.route('/show')
 def show():
@@ -114,10 +112,8 @@ def show():
 		doc = db.data.find({'k': k}).sort([('t', -1), ])[0]
 		v, t = doc['v'], doc['t']
 		x.append((k, v, t))
-	#endfor
-
 	return flask.render_template('show.html', data_last=x)
-#enddef
+
 
 @app.route('/graph/<path:k>/<int:secs>')
 def graph(k, secs):
@@ -126,10 +122,8 @@ def graph(k, secs):
 	for doc in db.data.find({'k': k, 't': {'$gte': since}}).sort([('t', 1), ]):
 		v, t = doc['v'], doc['t']
 		x.append((v, t))
-	#endfor
-
 	return flask.render_template('graph.html', data=x)
-#enddef
+
 
 @app.route('/alerts')
 def alerts():
@@ -138,27 +132,26 @@ def alerts():
 		print(last_vals)
 		#for k in sorted(last_vals.keys()):
 		for k in sorted(db.data.distinct('k')):
-			if not re.match(reg_exp, k): continue
+			if not re.match(reg_exp, k):
+				continue
 
 			#v, t = last_vals.get(k, (None, None))
 			doc = db.data.find({'k': k}).sort([('t', -1), ])[0]
 			v, t = doc['v'], doc['t']
 
 			if operator == '==':
-				if v != value: continue
+				if v != value:
+					continue
 			elif operator == '!=':
-				if v == value: continue
+				if v == value:
+					continue
 			else:
 				raise Exception('unknown operator %s' % operator)
-			#endif
 
 			#t = datetime.datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S')
 			x.append((k, v, t))
-		#endfor
-	#endfor
-
 	return flask.render_template('alerts.html', data_last=x)
-#enddef
+
 
 @app.route('/events')
 def events():
@@ -166,10 +159,8 @@ def events():
 	for k, v, t in evts:
 		t = datetime.datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S')
 		x.append((k, v, t))
-	#endfor
-
 	return flask.render_template('events.html', data_last=x)
-#enddef
+
 
 @app.route('/show_last/<path:test>')
 def show_last(test):
@@ -178,10 +169,8 @@ def show_last(test):
 	for doc in db.data.find({'k': test}).sort([('t', 1), ]).limit(HISTORY_LEN):
 		v, t = doc['v'], doc['t']
 		x.append((v, t))
-	#endfor
-
 	return flask.render_template('show_last.html', data_last=x)
-#enddef
+
 
 class MyThread(threading.Thread):
 	def __init__(self, events_fn):
@@ -190,7 +179,6 @@ class MyThread(threading.Thread):
 		self.events_fn = events_fn
 
 		self._run = True
-	#enddef
 
 	def run(self):
 		logging.info('thread run')
@@ -211,20 +199,20 @@ class MyThread(threading.Thread):
 					db.changes.insert_one({'k': k, 'v': v, 't': datetime.datetime.fromtimestamp(t)})
 
 					for reg_exp, operator, value in events:
-						if not re.match(reg_exp, k): continue
+						if not re.match(reg_exp, k):
+							continue
 
 						if operator == '==':
-							if v != value: continue
+							if v != value:
+								continue
 						elif operator == '!=':
-							if v == value: continue
+							if v == value:
+								continue
 						else:
 							raise Exception('unknown operator %s' % operator)
-						#endif
 
 						logging.debug('new event: %s %s' % (k, v))
 						evts.append((k, v, t))
-					#endfor
-				#endif
 
 				fn = normalize(k)
 
@@ -234,7 +222,6 @@ class MyThread(threading.Thread):
 						cmd += ' RRA:AVERAGE:0.999:1:100 RRA:AVERAGE:0.999:100:100'
 						logging.debug(cmd)
 						subprocess.check_call(cmd, shell=True)
-					#endif
 
 					#cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(t - 1), v)
 					#logging.debug(cmd)
@@ -264,22 +251,15 @@ class MyThread(threading.Thread):
 						cmd = 'rrdtool graph png/%s__1m.png --end now --start end-1M --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
 						logging.debug(cmd)
 						subprocess.check_call(cmd, shell=True)
-					#endif
-				#endif
 
 				last_vals[k] = (v, t)
-			#endwhile
 
 			time.sleep(1)  # TODO: hard-coded shit
-		#endwhile
 
 		logging.info('thread exit')
-	#enddef
 
 	def quit(self):
 		self._run = False
-	#enddef
-#endclass
 
 # TODO: globals are shit!!!
 alerts = None
@@ -292,38 +272,34 @@ def main():
 	cfg_fn = args['-c']
 	if not cfg_fn:
 		for fn in ('etc/atxmond.conf', '/etc/atxmond/atxmond.conf'):
-			if not os.path.isfile(fn): continue
+			if not os.path.isfile(fn):
+				continue
 			cfg_fn = fn
 			break
-		#endfor
-	#endif
 
 	alerts_fn = args['--alerts']
 	if not alerts_fn:
 		for fn in ('etc/alerts.conf', '/etc/atxmond/alerts.conf'):
-			if not os.path.isfile(fn): continue
+			if not os.path.isfile(fn):
+				continue
 			alerts_fn = fn
 			break
-		#endfor
-	#endif
 
 	events_fn = args['--events']
 	if not events_fn:
 		for fn in ('etc/events.conf', '/etc/atxmond/events.conf'):
-			if not os.path.isfile(fn): continue
+			if not os.path.isfile(fn):
+				continue
 			events_fn = fn
 			break
-		#endfor
-	#endif
 
 	state_fn = args['--state']
 	if not state_fn:
 		for fn in ('state.json', '/var/lib/atxmond/state.json'):
-			if not os.path.isfile(fn): continue
+			if not os.path.isfile(fn):
+				continue
 			state_fn = fn
 			break
-		#endfor
-	#endif
 
 	global alerts
 	alerts = load_alerts(alerts_fn)
@@ -336,7 +312,6 @@ def main():
 		data = s.get('data', data)
 		evts = s.get('evts', evts)
 		last_vals = s.get('last_vals', last_vals)
-	#endif
 
 	cfg = ConfigParser()
 	cfg.read(cfg_fn)
@@ -345,11 +320,9 @@ def main():
 		port = int(args['--port'])
 	except:
 		port = None
-	#endif
 
 	if port is None:
 		port = cfg.getint('General', 'Port', fallback=None)
-	#endif
 
 	logging.info('will run on port %d' % port)
 
@@ -384,8 +357,7 @@ def main():
 	save_json(s, state_fn)
 
 	logging.info('exit')
-#enddef
+
 
 if __name__ == '__main__':
 	sys.exit(main())
-#endif
