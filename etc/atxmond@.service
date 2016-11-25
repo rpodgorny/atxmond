@@ -4,6 +4,7 @@ After=network.target
 Wants=network.target
 
 [Service]
+Environment="PYTHONUNBUFFERED=1"
 ExecStart=/usr/bin/atxmond -c /etc/atxmond/%i/atxmond.conf --alerts /etc/atxmond/%i/alerts.conf --events /etc/atxmond/%i/events.conf --state /var/lib/atxmond/state.%i.json
 Restart=on-failure
 
