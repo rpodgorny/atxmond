@@ -43,7 +43,7 @@ app = flask.Flask(__name__)
 db = None
 data = []
 evts = []  # TODO: this is shitty name
-last_vals = {}  # TODO: shitty name
+lasts = {}  # TODO: shitty name
 
 
 # TODO: ugly name, ugly functionality
@@ -68,10 +68,8 @@ def load_alerts(fn):
 			line = line.strip()
 			if not line:
 				continue
-
 			reg_exp, operator, value = line.split(' ')
 			value = int(value)
-
 			ret.append((reg_exp, operator, value))
 	return ret
 
@@ -83,25 +81,33 @@ def load_events(fn):
 			line = line.strip()
 			if not line:
 				continue
-
 			reg_exp, operator, value = line.split(' ')
 			value = int(value)
-
 			ret.append((reg_exp, operator, value))
 	return ret
 
 
 @app.route('/')
 def index():
-	return 'index'
+	return '<html><body><a href="/show">show</a></body></html>'
 
 
 @app.route('/save', methods=['GET', 'POST'])
-def save_many():
+def save():
 	d = flask.request.get_json(force=True)
-	logging.debug('will save %s entries' % len(d))
-	data.extend(d)
-	return 'ok'
+	t = time.time()
+	if isinstance(d, dict):
+		d = [d, ]
+	if isinstance(d, list):
+		logging.debug('will save %s entries' % len(d))
+		for i in d:
+			i = handle_legacy(i)
+			i['t_server'] = t
+			db.data.insert_one(i)
+			data.append(i)
+		return 'ok'
+	else:
+		return 'unknown data format (%s)' % type(d)
 
 
 @app.route('/show')
@@ -109,19 +115,17 @@ def show():
 	x = []
 	# TODO: find the actual query to find unique shit
 	for k in sorted(db.data.distinct('k')):
-		doc = db.data.find({'k': k}).sort([('t', -1), ])[0]
-		v, t = doc['v'], doc['t']
-		x.append((k, v, t))
+		i = db.data.find({'k': k}).sort([('t', -1), ])[0]
+		x.append(i)
 	return flask.render_template('show.html', data_last=x)
 
 
 @app.route('/graph/<path:k>/<int:secs>')
 def graph(k, secs):
 	x = []
-	since = datetime.datetime.now() - datetime.timedelta(seconds=secs)
-	for doc in db.data.find({'k': k, 't': {'$gte': since}}).sort([('t', 1), ]):
-		v, t = doc['v'], doc['t']
-		x.append((v, t))
+	since = time.time() - secs
+	for i in db.data.find({'k': k, 't': {'$gte': since}}).sort([('t', 1), ]):
+		x.append(i)
 	return flask.render_template('graph.html', data=x)
 
 
@@ -129,133 +133,119 @@ def graph(k, secs):
 def alerts():
 	x = []
 	for reg_exp, operator, value in alerts:
-		print(last_vals)
-		#for k in sorted(last_vals.keys()):
+		print(lasts)
 		for k in sorted(db.data.distinct('k')):
 			if not re.match(reg_exp, k):
 				continue
-
-			#v, t = last_vals.get(k, (None, None))
 			doc = db.data.find({'k': k}).sort([('t', -1), ])[0]
-			v, t = doc['v'], doc['t']
-
 			if operator == '==':
-				if v != value:
+				if doc['v'] != value:
 					continue
 			elif operator == '!=':
-				if v == value:
+				if doc['v'] == value:
 					continue
 			else:
 				raise Exception('unknown operator %s' % operator)
-
 			#t = datetime.datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S')
-			x.append((k, v, t))
+			x.append(doc)
 	return flask.render_template('alerts.html', data_last=x)
 
 
 @app.route('/events')
 def events():
 	x = []
-	for k, v, t in evts:
-		t = datetime.datetime.fromtimestamp(t).strftime('%Y-%m-%d %H:%M:%S')
-		x.append((k, v, t))
+	for i in evts:
+		x.append(i)
 	return flask.render_template('events.html', data_last=x)
 
 
-@app.route('/show_last/<path:test>')
-def show_last(test):
+@app.route('/show_last/<path:k>')
+def show_last(k):
 	x = []
 	# TODO: actually show the last HISTORY_LEN ones
-	for doc in db.data.find({'k': test}).sort([('t', 1), ]).limit(HISTORY_LEN):
-		v, t = doc['v'], doc['t']
-		x.append((v, t))
+	for i in db.data.find({'k': k}).sort([('t', 1), ]).limit(HISTORY_LEN):
+		x.append(i)
 	return flask.render_template('show_last.html', data_last=x)
+
+
+def handle_legacy(d):
+	if 'path' in d:
+		d['k'] = d['path']
+		del d['path']
+	if 'value' in d:
+		d['v'] = d['value']
+		del d['value']
+	if 'time' in d:
+		d['t'] = d['time']
+		del d['time']
+	return d
+
+
+def rrd(d):
+	fn = normalize(d['k'])
+	if not os.path.isfile('rrd/%s.rrd' % fn):
+		cmd = 'rrdtool create rrd/%s.rrd --start 0 --step %d DS:xxx:GAUGE:%d:U:U' % (fn, d['interval'], d['interval'] * 2)
+		cmd += ' RRA:AVERAGE:0.999:1:100 RRA:AVERAGE:0.999:100:100'
+		logging.debug(cmd)
+		subprocess.check_call(cmd, shell=True)
+	#cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(d['t'] - 1), d['v'])
+	#logging.debug(cmd)
+	#subprocess.check_call(cmd, shell=True)
+	cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(d['t']), d['v'])
+	logging.debug(cmd)
+	subprocess.check_call(cmd, shell=True)
+	if GEN_PNG:
+		cmd = 'rrdtool graph png/%s__10min.png --end now --start end-10m --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+		logging.debug(cmd)
+		subprocess.check_call(cmd, shell=True)
+		cmd = 'rrdtool graph png/%s__1h.png --end now --start end-1h --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+		logging.debug(cmd)
+		subprocess.check_call(cmd, shell=True)
+		cmd = 'rrdtool graph png/%s__1d.png --end now --start end-1d --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+		logging.debug(cmd)
+		subprocess.check_call(cmd, shell=True)
+		cmd = 'rrdtool graph png/%s__1w.png --end now --start end-1w --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+		logging.debug(cmd)
+		subprocess.check_call(cmd, shell=True)
+		cmd = 'rrdtool graph png/%s__1m.png --end now --start end-1M --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
+		logging.debug(cmd)
+		subprocess.check_call(cmd, shell=True)
 
 
 class MyThread(threading.Thread):
 	def __init__(self, events_fn):
 		threading.Thread.__init__(self, daemon=False)
-
 		self.events_fn = events_fn
-
 		self._run = True
 
 	def run(self):
 		logging.info('thread run')
-
 		events = load_events(self.events_fn)
-
 		while self._run:
 			while data:
 				i = data.pop(0)
-				k, v, t, interval = i['path'], i['value'], i['time'], i['interval']
-				logging.debug('data %s %s %s %s' % (k, v, t, interval))
-
-				db.data.insert_one({'k': k, 'v': v, 't': datetime.datetime.fromtimestamp(t)})
-
-				last_v, last_t = last_vals.get(k, (None, None))
-				if v != last_v:
-					logging.debug('change %s %s %s %s' % (k, v, t, interval))
-					db.changes.insert_one({'k': k, 'v': v, 't': datetime.datetime.fromtimestamp(t)})
-
+				logging.debug('data: %s' % i)
+				last = lasts.get(i['k'], {})
+				if i['v'] != last.get('v'):
+					logging.debug('change: %s' % i)
+					db.changes.insert_one(i)
 					for reg_exp, operator, value in events:
-						if not re.match(reg_exp, k):
+						if not re.match(reg_exp, i['k']):
 							continue
-
 						if operator == '==':
-							if v != value:
+							if i['v'] != value:
 								continue
 						elif operator == '!=':
-							if v == value:
+							if i['v'] == value:
 								continue
 						else:
 							raise Exception('unknown operator %s' % operator)
-
-						logging.debug('new event: %s %s' % (k, v))
-						evts.append((k, v, t))
-
-				fn = normalize(k)
-
+						logging.debug('new event: %s %s' % (i['k'], i['v']))
+						evts.append(i)
 				if RRD:
-					if not os.path.isfile('rrd/%s.rrd' % fn):
-						cmd = 'rrdtool create rrd/%s.rrd --start 0 --step %d DS:xxx:GAUGE:%d:U:U' % (fn, interval, interval * 2)
-						cmd += ' RRA:AVERAGE:0.999:1:100 RRA:AVERAGE:0.999:100:100'
-						logging.debug(cmd)
-						subprocess.check_call(cmd, shell=True)
-
-					#cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(t - 1), v)
-					#logging.debug(cmd)
-					#subprocess.check_call(cmd, shell=True)
-
-					cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(t), v)
-					logging.debug(cmd)
-					subprocess.check_call(cmd, shell=True)
-
-					if GEN_PNG:
-						cmd = 'rrdtool graph png/%s__10min.png --end now --start end-10m --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-						logging.debug(cmd)
-						subprocess.check_call(cmd, shell=True)
-
-						cmd = 'rrdtool graph png/%s__1h.png --end now --start end-1h --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-						logging.debug(cmd)
-						subprocess.check_call(cmd, shell=True)
-
-						cmd = 'rrdtool graph png/%s__1d.png --end now --start end-1d --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-						logging.debug(cmd)
-						subprocess.check_call(cmd, shell=True)
-
-						cmd = 'rrdtool graph png/%s__1w.png --end now --start end-1w --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-						logging.debug(cmd)
-						subprocess.check_call(cmd, shell=True)
-
-						cmd = 'rrdtool graph png/%s__1m.png --end now --start end-1M --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-						logging.debug(cmd)
-						subprocess.check_call(cmd, shell=True)
-
-				last_vals[k] = (v, t)
-
+					rrd(i)
+				lasts[i['k']] = i
 			time.sleep(1)  # TODO: hard-coded shit
-
 		logging.info('thread exit')
 
 	def quit(self):
@@ -304,14 +294,14 @@ def main():
 	global alerts
 	alerts = load_alerts(alerts_fn)
 
-	global data, evts, last_vals
+	global data, evts, lasts
 
 	if state_fn and os.path.isfile(state_fn):
 		logging.info('loading state from %s' % state_fn)
 		s = load_json(state_fn)
 		data = s.get('data', data)
 		evts = s.get('evts', evts)
-		last_vals = s.get('last_vals', last_vals)
+		lasts = s.get('lasts', lasts)
 
 	cfg = ConfigParser()
 	cfg.read(cfg_fn)
@@ -353,7 +343,7 @@ def main():
 	s = {}
 	s['data'] = data
 	s['evts'] = evts
-	s['last_vals'] = last_vals
+	s['lasts'] = lasts
 	save_json(s, state_fn)
 
 	logging.info('exit')

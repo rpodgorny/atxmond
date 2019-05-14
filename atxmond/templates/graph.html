@@ -2,23 +2,20 @@
 <head>
 	<script type="text/javascript" src="https://www.google.com/jsapi"></script>
 	<script type="text/javascript">
-		google.load("visualization", "1", {packages:["corechart"]});
+		google.load("visualization", "1", {packages: ["corechart"]});
 		google.setOnLoadCallback(drawChart);
 		function drawChart() {
 			var data = google.visualization.arrayToDataTable([
 				['t', 'v'],
-				{% for v, t in data %}
-				[new Date("{{ t }}"), {{ v }}],
+				{% for i in data %}
+					[new Date({{ i['t'] }}), {{ i['v'] }}],
 				{% endfor %}
 			]);
-
 			var options = {
 				//title: 'Age vs. Weight comparison',
 				legend: 'none',
 			}
-
 			var chart = new google.visualization.ScatterChart(document.getElementById('chart_div'));
-
 			chart.draw(data, options);
 		}
 	</script>

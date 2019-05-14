@@ -2,17 +2,17 @@
 <body>
 
 <table>
-{% for k, v, t in data_last %}
+{% for i in data_last %}
 	<tr>
-		<td>{{ k }}</td>
-		<td>{{ v }}</td>
-		<td>{{ t }}</td>
-		<td><a href="show_last/{{ k|urlencode() }}">last</a></td>
-		<td><a href="graph/{{ k|urlencode() }}/600">10min</a></td>
-		<td><a href="graph/{{ k|urlencode() }}/3600">1h</a></td>
-		<td><a href="graph/{{ k|urlencode() }}/86400">1d</a></td>
-		<td><a href="graph/{{ k|urlencode() }}/2592000">30d</a></td>
-		<td><a href="graph/{{ k|urlencode() }}/31536000">365d</a></td>
+		<td>{{ i['k'] }}</td>
+		<td>{{ i['v'] }}</td>
+		<td>{{ i['t'] }}</td>
+		<td><a href="show_last/{{ i['k'] | urlencode() }}">last</a></td>
+		<td><a href="graph/{{ i['k'] | urlencode() }}/600">10min</a></td>
+		<td><a href="graph/{{ i['k'] | urlencode() }}/3600">1h</a></td>
+		<td><a href="graph/{{ i['k'] | urlencode() }}/86400">1d</a></td>
+		<td><a href="graph/{{ i['k'] | urlencode() }}/2592000">30d</a></td>
+		<td><a href="graph/{{ i['k'] | urlencode() }}/31536000">365d</a></td>
 	</tr>
 {% endfor %}
 </table>
