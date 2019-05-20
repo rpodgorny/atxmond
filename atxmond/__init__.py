@@ -7,11 +7,13 @@ Usage:
   atxmond [options]
 
 Options:
-  -c <fn>        Path to the configuration file.
-  --alerts <fn>  Path to the alerts file.
-  --events <fn>  Path to the events file.
-  --state <fn>   Path to the state file.
-  --port <port>  Port number to listen on.
+  -c <fn>             Path to the configuration file.
+  --alerts <fn>       Path to the alerts file.
+  --events <fn>       Path to the events file.
+  --state <fn>        Path to the state file.
+  --port <port>       Port number to listen on.
+  --db <host>         Hostname of mongodb backend.
+  --collection <col>  Collection to use in mongo.
 '''
 
 import sys
@@ -310,18 +312,21 @@ def main():
 		port = int(args['--port'])
 	except:
 		port = None
-
 	if port is None:
 		port = cfg.getint('General', 'Port', fallback=None)
-
 	logging.info('will run on port %d' % port)
 
-	collection_name = cfg.get('Mongo', 'Collection')
+	db_host = args['--db']
+	logging.info('will connect to %s' % db_host)
+
+	collection_name = args['--collection']
+	if collection_name is None:
+		collection_name = cfg.get('Mongo', 'Collection')
 	logging.info('will use collection %s' % collection_name)
 
 	# TODO: ugly
 	global db
-	db = pymongo.MongoClient()[collection_name]
+	db = pymongo.MongoClient(db_host)[collection_name]
 
 	db.data.ensure_index('k')
 	db.data.ensure_index('t')
