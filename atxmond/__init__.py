@@ -14,6 +14,7 @@ Options:
   --port <port>       Port number to listen on.
   --db <host>         Hostname of mongodb backend.
   --collection <col>  Collection to use in mongo.
+  --debug             Set log level to DEBUG.
 '''
 
 import sys
@@ -259,7 +260,8 @@ alerts = None
 def main():
 	args = docopt.docopt(__doc__, version=__version__)
 
-	logging.basicConfig(level='DEBUG')
+	level = 'DEBUG' if args['--debug'] else 'INFO'
+	logging.basicConfig(level=level)
 
 	cfg_fn = args['-c']
 	if not cfg_fn:
