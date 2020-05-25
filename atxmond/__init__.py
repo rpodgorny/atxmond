@@ -12,7 +12,6 @@ Options:
   --events <fn>       Path to the events file.
   --state <fn>        Path to the state file.
   --port <port>       Port number to listen on.
-  --db <host>         Hostname of mongodb backend.
   --db <host>         Hostname of influxdb backend.
   --debug             Set log level to DEBUG.
 '''
