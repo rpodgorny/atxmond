@@ -13,7 +13,7 @@ Options:
   --state <fn>        Path to the state file.
   --port <port>       Port number to listen on.
   --db <host>         Hostname of mongodb backend.
-  --collection <col>  Collection to use in mongo.
+  --db <host>         Hostname of influxdb backend.
   --debug             Set log level to DEBUG.
 '''
 
@@ -28,7 +28,7 @@ import time
 import os
 import re
 import json
-import pymongo
+import influxdb
 import docopt
 from configparser import ConfigParser
 
@@ -37,8 +37,6 @@ __version__ = '0.0'
 
 
 HISTORY_LEN = 10
-RRD = False
-GEN_PNG = False
 
 
 # TODO: globals are shit
@@ -106,7 +104,12 @@ def save():
 		for i in d:
 			i = handle_legacy(i)
 			i['t_server'] = t
-			db.data.insert_one(i)
+			point = {
+				'measurement': i['k'],
+				'time': int(i['t'] * 1000000000),
+				'fields': {'v': i['v']},
+			}
+			db.write_points([point])
 			data.append(i)
 		return 'ok'
 	else:
@@ -116,9 +119,14 @@ def save():
 @app.route('/show')
 def show():
 	x = []
-	# TODO: find the actual query to find unique shit
-	for k in sorted(db.data.distinct('k')):
-		i = db.data.find({'k': k}).sort([('t', -1), ])[0]
+	for meas in sorted(db.get_list_measurements()):
+		k = meas['name']
+		res = db.query('select time,v from "%s" order by desc limit 1' % k, epoch='ns')
+		r = list(res)[0][0]
+		#print('SHIT', r)
+		t = r['time'] / 1000000000
+		v = r['v']
+		i = {'k': k, 't': t, 'v': v}
 		x.append(i)
 	return flask.render_template('show.html', data_last=x)
 
@@ -184,37 +192,6 @@ def handle_legacy(d):
 	return d
 
 
-def rrd(d):
-	fn = normalize(d['k'])
-	if not os.path.isfile('rrd/%s.rrd' % fn):
-		cmd = 'rrdtool create rrd/%s.rrd --start 0 --step %d DS:xxx:GAUGE:%d:U:U' % (fn, d['interval'], d['interval'] * 2)
-		cmd += ' RRA:AVERAGE:0.999:1:100 RRA:AVERAGE:0.999:100:100'
-		logging.debug(cmd)
-		subprocess.check_call(cmd, shell=True)
-	#cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(d['t'] - 1), d['v'])
-	#logging.debug(cmd)
-	#subprocess.check_call(cmd, shell=True)
-	cmd = 'rrdtool update rrd/%s.rrd %d:%s' % (fn, int(d['t']), d['v'])
-	logging.debug(cmd)
-	subprocess.check_call(cmd, shell=True)
-	if GEN_PNG:
-		cmd = 'rrdtool graph png/%s__10min.png --end now --start end-10m --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-		logging.debug(cmd)
-		subprocess.check_call(cmd, shell=True)
-		cmd = 'rrdtool graph png/%s__1h.png --end now --start end-1h --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-		logging.debug(cmd)
-		subprocess.check_call(cmd, shell=True)
-		cmd = 'rrdtool graph png/%s__1d.png --end now --start end-1d --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-		logging.debug(cmd)
-		subprocess.check_call(cmd, shell=True)
-		cmd = 'rrdtool graph png/%s__1w.png --end now --start end-1w --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-		logging.debug(cmd)
-		subprocess.check_call(cmd, shell=True)
-		cmd = 'rrdtool graph png/%s__1m.png --end now --start end-1M --units-exponent 0 DEF:xxx=rrd/%s.rrd:xxx:AVERAGE LINE2:xxx#FF0000' % (fn, fn, )
-		logging.debug(cmd)
-		subprocess.check_call(cmd, shell=True)
-
-
 class MyThread(threading.Thread):
 	def __init__(self, events_fn):
 		threading.Thread.__init__(self, daemon=False)
@@ -231,7 +208,7 @@ class MyThread(threading.Thread):
 				last = lasts.get(i['k'], {})
 				if i['v'] != last.get('v'):
 					logging.debug('change: %s' % i)
-					db.changes.insert_one(i)
+					#db.changes.insert_one(i)
 					for reg_exp, operator, value in events:
 						if not re.match(reg_exp, i['k']):
 							continue
@@ -245,8 +222,6 @@ class MyThread(threading.Thread):
 							raise Exception('unknown operator %s' % operator)
 						logging.debug('new event: %s %s' % (i['k'], i['v']))
 						evts.append(i)
-				if RRD:
-					rrd(i)
 				lasts[i['k']] = i
 			time.sleep(1)  # TODO: hard-coded shit
 		logging.info('thread exit')
@@ -321,22 +296,10 @@ def main():
 	db_host = args['--db']
 	logging.info('will connect to %s' % db_host)
 
-	collection_name = args['--collection']
-	if collection_name is None:
-		collection_name = cfg.get('Mongo', 'Collection')
-	logging.info('will use collection %s' % collection_name)
-
 	# TODO: ugly
 	global db
-	db = pymongo.MongoClient(db_host)[collection_name]
-
-	db.data.ensure_index('k')
-	db.data.ensure_index('t')
-	db.data.ensure_index([('k', 1), ('v', 1)])
-	db.data.ensure_index([('k', 1), ('t', 1)])
-	db.data.ensure_index([('k', 1), ('v', 1), ('t', 1)])
-	db.changes.ensure_index('k')
-	db.changes.ensure_index('t')
+	db = influxdb.InfluxDBClient(host=db_host, database='atxmond')
+	db.create_database('atxmond')
 
 	thr = MyThread(events_fn)
 	thr.start()
