@@ -236,6 +236,7 @@ def main():
 
 	level = 'DEBUG' if args['--debug'] else 'INFO'
 	logging.basicConfig(level=level)
+	logging.getLogger('werkzeug').setLevel('WARN')
 
 	cfg_fn = args['-c']
 	if not cfg_fn:
